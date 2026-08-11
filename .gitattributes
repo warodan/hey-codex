@@ -1,0 +1,12 @@
+# The script runs through sh — CRLF breaks it on macOS and Linux (bad interpreter).
+*.sh text eol=lf
+
+# Everything else is text with LF, so the content does not depend on the cloner's settings.
+*.md text eol=lf
+*.json text eol=lf
+*.svg text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# LICENSE has no extension — pin it too.
+LICENSE text eol=lf

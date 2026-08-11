@@ -1,0 +1,26 @@
+# OS and editors
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*~
+
+# Codex run artefacts (answers go to a temp folder, but just in case)
+codex-answer-*.md
+codex-task-*.md
+*.log
+
+# local drafts and notes
+scratch/
+*.local.md
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# node
+node_modules/
+package-lock.json
