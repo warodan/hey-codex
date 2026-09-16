@@ -19,7 +19,7 @@ The sandbox is set explicitly in every call: `read-only` by default, writing swi
 
 ## What it does
 
-<img src="assets/demo.svg" width="720" alt="A Claude Code terminal frame: the user types 'give codex a task: add a dark theme, let it edit the files itself'; Claude replies with the line 'Sending to Codex: dark theme for the landing page, file edits' and runs codex exec with the workspace-write sandbox, feeding the prompt from prompt.txt on stdin; under the heading 'Codex answer' it says a toggle and CSS variables were added with the theme remembered in localStorage, three files touched; below is git diff --stat output showing changes in styles.css and index.html.">
+<img src="assets/demo.svg" width="720" alt="A Claude Code terminal frame: the user types 'give codex a task: add a dark theme, let it edit the files itself'; Claude replies with the line 'Sending to Codex: dark theme for the landing page, file edits' and runs codex exec with the workspace-write sandbox, feeding the task spec from spec.md on stdin; under the heading 'Codex answer' it says a toggle and CSS variables were added with the theme remembered in localStorage, two files touched; below is git diff --stat output showing changes in styles.css and index.html.">
 
 You tell your agent "ask codex" — the skill assembles a `codex exec` command, runs the locally
 installed OpenAI Codex CLI, collects the final answer from a file and quotes it in the chat verbatim.
@@ -31,10 +31,14 @@ Beyond text answers it also **looks at images** (reads screenshots, diagrams, fi
 and **generates them** — the picture is drawn by the built-in generator and the finished file is
 saved to disk.
 
+And it **hands Codex a task by spec**: Claude writes the spec — the result, the context, the
+constraints, the check that proves it is done — Codex implements it in the project, Claude reruns
+the check itself and shows `git diff --stat`. A fix round reuses the same Codex session.
+
 | At a glance | |
 |---|---:|
 | What it does | **calls the Codex CLI from your agent** |
-| Handles | **text · reading images · generating images** |
+| Handles | **text · tasks by spec · reading images · generating images** |
 | Default sandbox | **`read-only`, set explicitly in every call** |
 | Writing to files | **only when explicitly asked, or to save a picture** |
 | Requires API keys | **no — sign-in with a ChatGPT account** |
@@ -43,7 +47,7 @@ saved to disk.
 
 ## Why
 
-- **A second model within reach** — GPT-5.6 looks at the same task with fresh eyes: copy, a plan, a contested decision, code.
+- **A second model within reach** — GPT-6 Astra looks at the same task with fresh eyes: copy, a plan, a contested decision, code.
 - **No context switching** — no second terminal, no copy-pasting, no retyping the task.
 - **Images both ways** — from reading an error screenshot to a finished illustration, without leaving the chat.
 - **The dangerous Codex default is defused** — a typical config allows writing anywhere without asking; the skill passes `--sandbox read-only` in every call and enables writing only when you asked for it.
@@ -138,8 +142,9 @@ convenient for interactive work and entirely unfit as an invisible default for a
 
 - **An explicit `--sandbox read-only` in every call.** A command-line flag overrides the config: Codex
   reads the code and answers in text, and cannot write.
-- **Writing is a separate mode.** `--sandbox workspace-write` is used only if you said outright "let it
-  fix it itself"; the permissions are limited to the working folder. After the edits the skill shows
+- **Writing is a separate mode.** `--sandbox workspace-write` is used only if you said outright "let
+  codex write it"; the permissions are limited to the working folder plus one scratch folder for
+  temporary files. After the edits the skill reruns the check named in the spec and shows
   `git status` and `git diff --stat` so the changes are visible.
 - **Resuming a session is covered too.** `codex exec resume` has no `--sandbox` flag, so the sandbox is
   passed as `-c sandbox_mode="read-only"` — otherwise a follow-up question would inherit
@@ -153,7 +158,7 @@ safer not to keep a dangerous value in the config at all.
 ### A recommended config
 
 ```toml
-model = "gpt-5.6-sol"           # or another model available to you
+model = "gpt-6-astra"           # or another model available to you
 model_reasoning_effort = "high" # low | medium | high | xhigh | max | ultra
 service_tier = "default"
 sandbox_mode = "workspace-write"
@@ -190,11 +195,12 @@ A project review: Codex reads the files itself, answers on the substance and cha
 sandbox is `read-only`.
 
 ```text
-give codex a task: add retry with backoff to the http client, let it edit the files
+let codex write it: retry with backoff in the http client, tests included
 ```
 
-Vibe coding: `workspace-write` switches on, Codex edits the files, and `git diff --stat` is shown
-afterwards — so you can see exactly what it did.
+A task by spec: Claude writes the spec with a check that proves the task is done, `workspace-write`
+switches on, Codex implements it, Claude reruns the check and shows `git diff --stat` — so you can
+see exactly what it did.
 
 ```text
 show codex this screenshot and ask why everything is out of place
@@ -249,7 +255,9 @@ flowchart LR
    The prompt is fed as a file on stdin rather than as a command argument: on Windows an argument goes
    through `codex.cmd`, and everything after the first newline is silently lost. For image generation
    and file edits, `workspace-write` is used instead of `read-only` — otherwise there is nowhere to
-   save the result.
+   save the result. A task goes in as a spec file with a check that proves it is done, and Codex
+   gets one extra writable scratch folder (`--add-dir`) for temporary files, so they stay out of
+   the project.
 4. **Collecting the answer.** The final text is written to a file with `-o` — and that is what gets
    read. This way there is no service output to clean up, and non-ASCII text does not break in the
    Windows console.
@@ -298,15 +306,20 @@ hey-codex/                   # the repository
   `config.toml` are done by hand. The skill only assembles commands.
 - **It updates the Codex CLI on its own.** Once a day it may run `codex update` (which is
   `npm install -g`). If you need a pinned version — delete `check_update.sh` and §0 in `SKILL.md`.
-- **It does not check whether Codex is right.** The answer is delivered verbatim, unverified; edits made
-  in `workspace-write` are not covered by tests — the skill only shows `git status` and `git diff --stat`.
+- **It does not check whether Codex is right.** The answer is delivered verbatim, unverified. Edits made
+  in `workspace-write` are verified only by the check named in the spec, which Claude reruns; there
+  is no review round unless you ask for one.
 - **Image generation is imprecise in the details.** Fine print, strict geometry and requested dimensions
   do not always come out on the first try — the result is worth a look and possibly a redo.
+- **Codex marks folders as trusted on its own.** Every `codex exec` in a new folder — including the
+  temporary one used for a bare question — adds a `[projects]` entry to your `config.toml`. That is
+  Codex behaviour, not the skill's; the skill never edits the file, so the entries stay until you
+  remove them.
 - **The `read-only` protection covers the skill's calls only.** Dangerous values in your `config.toml`
   stay dangerous for everything else that launches Codex.
 - **It is not free.** The work runs on your ChatGPT subscription; heavy runs eat noticeably into the
   limit. The OpenAI API-key authentication route has not been tested.
-- **Model names age.** `gpt-5.6-sol`, `gpt-5.5` and the rest are current as of publication; the live
+- **Model names age.** `gpt-6-astra`, `gpt-5.6-sol` and the rest are current as of publication; the live
   list lives in `~/.codex/models_cache.json` and changes on OpenAI's side.
 
 ## License

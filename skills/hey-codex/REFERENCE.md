@@ -10,7 +10,8 @@ did not work or the user asks for something non-standard.
 - [`codex exec` flags](#codex-exec-flags) — full table
 - [Other subcommands](#other-subcommands) — `resume`, `review`, `apply`, `doctor`, `mcp`
 - [Pitfalls](#pitfalls) — **prompt as an argument on Windows**, hanging at start, encoding,
-  unknown feature flag, untrusted directory, error 400, YAML
+  unknown feature flag, untrusted directory, error 400, YAML, Store `python` in the sandbox,
+  trust trail in the config
 - [Cost](#cost) — subscription spend
 
 ## Where things live
@@ -42,11 +43,16 @@ The config belongs to the user and the skill does not write to it. The values be
 affect calls; what a particular person has set is something to look at, not to assume:
 
 ```toml
-model = "gpt-5.6-sol"                 # the default model
+model = "gpt-6-astra"                 # the default model
 model_reasoning_effort = "high"       # low → medium → high → xhigh → max → ultra
 sandbox_mode = "workspace-write"      # see the warning below
 approval_policy = "on-request"
 service_tier = "default"              # "priority" = 1.5x speed
+
+[shell_environment_policy]
+inherit = "core"                      # "core" = HOME, PATH, TEMP and the like — the user's own
+                                      # variables (API keys) do NOT reach commands Codex runs;
+                                      # "all" passes them. A test that needs a key fails on "core".
 ```
 
 **Warning.** If the config holds `sandbox_mode = "danger-full-access"` together with
@@ -64,12 +70,18 @@ Do not edit the config silently: it is the user's shared file, also used by the 
 
 From `~/.codex/models_cache.json` (check there for the current list):
 
-- `gpt-5.6-sol` — the main agentic model (default), `gpt-5.6-luna`, `gpt-5.6-terra`
-- `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini` — previous ones
+- `gpt-6-astra` — the top model (bundled default since 0.153.4, 2026-09-04); follows `AGENTS.md`
+  and skills more literally than Sol, delegates less than asked, may stop early on a vague task —
+  define "done" in the spec
+- `gpt-5.6-sol` — the previous main agentic model, `gpt-5.6-terra` (balanced), `gpt-5.6-luna` (fast)
+- `gpt-5.5` — previous generation
+- `gpt-5.4` and `gpt-5.4-mini` left the catalogue with 0.154.0
 
 `model_reasoning_effort` levels: `low` → `medium` → `high` → `xhigh` → `max` → `ultra`
-(`ultra` = maximum plus automatic delegation of subtasks). The model's own default is `low`;
-the user's config may say otherwise — that is their choice, do not change it unasked.
+(`ultra` = maximum plus automatic delegation of subtasks). Not every model has the top levels:
+`gpt-5.6-luna` stops at `max`, `gpt-5.5` at `xhigh`.
+The model's own default is `medium` (`low` on Sol); the user's config may say otherwise — that is
+their choice, do not change it unasked.
 
 Speed: `service_tier = "default"` (normal) or `"priority"` (called Fast in the UI, 1.5×).
 
@@ -97,14 +109,16 @@ is the main way to pass it, see pitfall 1.
 ## Other subcommands
 
 - `codex exec resume --last [PROMPT]` / `resume <SESSION_ID>` — resume a session (`--all` drops the cwd filter).
-  `resume` has **no** `--sandbox` and no `-C`: the sandbox is set with `-c sandbox_mode="read-only"`,
+  `resume` has **no** `--sandbox`, no `-C` and no `--add-dir`: the sandbox is set with
+  `-c sandbox_mode="read-only"`, the scratch folder with `-c 'sandbox_workspace_write.writable_roots=["<dir>"]'`,
   and the working folder is inherited from the original session. It does have: `-m`, `-c`, `-o`, `--json`,
   `-i`, `--enable/--disable`, `--skip-git-repo-check`, `--ephemeral`, `--ignore-user-config`, `--output-schema`
 - `codex review` — non-interactive code review of a repository
 - `codex apply` — apply the agent's last diff to the working tree as `git apply`
 - `codex fork` — fork a past session
 - `codex doctor` — diagnostics for the installation, config and authentication
-- `codex mcp` — manage external MCP servers for Codex; `codex mcp-server` — run Codex itself as an MCP server (stdio)
+- `codex mcp` — manage external MCP servers for Codex. `codex mcp-server` is gone (removed before 0.154.0);
+  its replacement is `codex app-server`, marked experimental
 - `codex features list|enable|disable` — feature flags
 - `codex sandbox <cmd>` — run a command inside the Codex sandbox
 - `codex` with no arguments — the interactive TUI (for the user, not for an agent)
@@ -155,6 +169,13 @@ is the main way to pass it, see pitfall 1.
    habit rather than a fix for one version. The error goes to stderr on any run, catch it like this:
    `codex exec --sandbox read-only "ok" < /dev/null 2>&1 | grep "failed to load"`.
 9. **`codex update` emits an EPERM warning** about deleting the old `codex.exe` — harmless, the version changes.
+10. **`python` is denied inside `workspace-write` on Windows.** `python` on PATH often resolves to
+    the Microsoft Store alias in `WindowsApps`, and the sandbox refuses to launch it ("access
+    denied"). Codex then works around it or reports a passing check that never ran. Cure: name a
+    real interpreter in the spec (`py -3`, or the full path from `where python`).
+11. **Every `codex exec` in a new folder adds that folder to `[projects]` in `config.toml`** as
+    trusted — Codex does that itself, on every run. Probes in temp folders (§4) leave a trail;
+    tell the user which line appeared. The config is theirs, the skill does not edit it.
 
 ## Cost
 

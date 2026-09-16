@@ -1,6 +1,6 @@
 ---
 name: hey-codex
-description: 'Use when the user wants to reach OpenAI Codex CLI (GPT-5.6) — ask it a question, hand it a task, get a second opinion from another model, read an image or a screenshot, generate a picture; also updating Codex CLI itself and diagnosing its errors. Triggers: "ask codex", "call codex", "give codex a task", "send this to codex", "ask codex to write/review/look at/draw", "what does codex say", "ask codex to clarify", "have codex generate an image", "hey codex", "update codex", "which codex version", "codex crashed", "codex is not responding", "codex error", hey-codex, codex, codex exec. Russian: «вызови кодекс», «спроси кодекса», «дай кодексу задачу», «отправь в кодекс», «попроси кодекса написать/проверить/посмотреть/нарисовать», «что скажет кодекс», «уточни у кодекса», «пусть кодекс сгенерирует картинку», «эй кодекс», «обнови кодекс», «какая версия кодекса», «кодекс упал», «кодекс не отвечает», «ошибка codex».'
+description: 'Use when the user wants to reach OpenAI Codex CLI (GPT-6 Astra, GPT-5.6) — ask it a question, hand it a task by spec so it writes the code in the project, get a second opinion from another model, read an image or a screenshot, generate a picture; also updating Codex CLI itself and diagnosing its errors. Triggers: "ask codex", "call codex", "give codex a task", "let codex write it", "send this to codex", "ask codex to write/review/look at/draw", "what does codex say", "ask codex to clarify", "have codex generate an image", "hey codex", "update codex", "which codex version", "codex crashed", "codex is not responding", "codex error", hey-codex, codex, codex exec. Russian: «вызови кодекс», «спроси кодекса», «дай кодексу задачу», «отправь в кодекс», «попроси кодекса написать/проверить/посмотреть/нарисовать», «что скажет кодекс», «уточни у кодекса», «пусть кодекс сгенерирует картинку», «эй кодекс», «обнови кодекс», «какая версия кодекса», «кодекс упал», «кодекс не отвечает», «ошибка codex».'
 ---
 
 # hey-codex — calling the OpenAI Codex CLI
@@ -40,12 +40,13 @@ Show the user this line **only** if there was an update or an error; `skipped`/`
 
 Model, reasoning effort and speed come from the user's `~/.codex/config.toml`. **Leave them out of
 the command** — those are the user's settings, and it is their choice that counts here, not your own
-ideas. Add flags only when the user explicitly asked for something else (see §6).
+ideas. Add flags only when the user explicitly asked for something else (see §6); the one
+exception is reasoning effort on a heavy §3 task.
 
 **The sandbox is the opposite — always set it.** The config may hold
 `sandbox_mode = "danger-full-access"` together with `approval_policy = "never"`: then, without an
 explicit flag, Codex gets full disk access and writes without asking. You cannot rely on a safe
-value being there. So **`--sandbox read-only` is mandatory in every call**, except the §3 case.
+value being there. So **the sandbox is set explicitly in every call**: `--sandbox read-only` (on `resume` — `-c sandbox_mode="read-only"`, §7); `workspace-write` only in §3 and for image generation in §5.
 
 ## 2. Normal call — question / analysis / second opinion
 
@@ -66,20 +67,20 @@ codex exec --sandbox read-only -c features.plugins=false \
   newline is silently lost, together with the flags that follow it (`REFERENCE.md`, pitfall 1)
 - `-o <file>` — the final Codex answer without the service noise; read **that**, do not parse stdout
 - `-C` — the current project root, so Codex sees the code and `AGENTS.md`
-- do not silence stdout: `session id: <uuid>` for §7 comes from there (the answer itself comes from
+- stdout stays visible: `session id: <uuid>` for §7 comes from there (the answer itself comes from
   the `-o` file)
 
 The `<` operator is understood by POSIX shells only. If commands go through PowerShell, the prompt
-is piped in, and the encoding line is mandatory: without it Cyrillic arrives as `????`, Codex
-answers the garbled prompt and exits with code 0 — the failure is invisible (`REFERENCE.md`, pitfall 3).
+is piped in, and the encoding line is mandatory (`REFERENCE.md`, pitfall 3).
 
 ```powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 Get-Content -Raw -Encoding UTF8 prompt.txt | codex exec --sandbox read-only -c features.plugins=false -C "<project root>" -o "<temp folder>/codex-answer-1.md"
 ```
 
-Both lines are required: without `$OutputEncoding` the prompt arrives as `????`, without
-`-Encoding UTF8` the file is read as ANSI and is transcoded twice. The other calls in this skill
+Both lines are required: without `$OutputEncoding` the prompt arrives as `????`, Codex answers the
+garbled prompt and exits with code 0 — the failure is invisible; without `-Encoding UTF8` the file
+is read as ANSI and is transcoded twice. The other calls in this skill
 (§3, §4, §5, §7) are assembled the same way in PowerShell — same pipe instead of `<`.
 
 The flag comes off at the user's request — "let it work with its plugins". If a specific Codex skill
@@ -97,17 +98,80 @@ our conversation). A bare question with no header — when the user asks to "ask
 or when the task is self-contained (write a prompt for an image generator, explain a concept, come
 up with some copy). That case is §4.
 
-## 3. A task that edits files — only when explicitly asked
+## 3. A task by spec — Codex writes the code, only when explicitly asked
 
-If the user said "let it fix it itself / write straight into the files":
+If the user said "let codex write it / fix it itself / give codex the task": you write the spec,
+Codex implements it in the project, you rerun the done-check. Without that explicit request —
+always `read-only` (§2), and you apply Codex's edits yourself.
 
 ```bash
 codex exec --sandbox workspace-write -c features.plugins=false \
-  -C "<project root>" -o "<temp folder>/codex-task-1.md" < "<temp folder>/prompt.txt"
+  -C "<project root>" --add-dir "<temp folder>/codex-tmp" \
+  -o "<temp folder>/codex-task-1.md" < "<temp folder>/spec.md"
 ```
 
-Without that explicit request — always `read-only`, and you apply Codex's edits yourself.
-After the edits, show `git status`/`git diff --stat` so it is visible what it did.
+`--add-dir` gives Codex a writable scratch folder outside the project. Without it, on Windows the
+sandbox cannot reach the system TEMP, so Codex puts pytest temp dirs and caches inside the
+project (`.tmp/`, `.test-runs/`) — and is then refused deleting them. Name that folder in the
+spec's Constraints (see the template).
+
+Model and effort come from the config (§1). Heavy task — add `-c model_reasoning_effort="xhigh"`.
+`ultra` only when the user hands Codex the whole organisation of the work: on `ultra` Codex
+delegates to its own subagents by itself, past your spec, and spends the subscription fastest.
+A long task goes to the background (§8).
+
+**The spec** is the file on stdin. Every part is required — Codex cannot see our conversation:
+
+```markdown
+# Task: <name>
+
+## Result
+What exists when it is done. One testable sentence.
+
+## Context
+What the project is; which files or modules this touches; what has already been established.
+
+## Constraints
+Stack. Do not touch: … Out of scope: …
+Temporary files, test temp dirs (`pytest --basetemp`) and caches go to `<temp folder>/codex-tmp`,
+never inside the project.
+
+## Check
+The exact command(s) and the expected outcome; the manual scenario, if any.
+Done when: … Run the check, fix, rerun — without asking. A money / data / outward / access
+fork: stop with STATUS: BLOCKED and say what is needed.
+
+## Subagents
+<one of> Do it yourself. | You may use subagents. | Split into subagents, up to N: independent
+pieces only, never two on the same files. <Which model and effort each gets is Codex's call.>
+
+## Report
+Up to 25 lines, no code, no diffs, no narration of the work:
+STATUS: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+FILES: created and changed
+CHECKS: command → result and exit code, verbatim, including the ones that failed
+CONCERNS: done with an assumption or a workaround, and why
+BLOCKERS: what was missing (decision, access, dependency)
+```
+
+If the check runs Python, name the interpreter path in Context: inside `workspace-write` on
+Windows the `python` from the Microsoft Store alias is denied (`REFERENCE.md`, pitfall 10).
+
+**After the answer** — do not take CHECKS on trust: rerun the done-check command yourself, then
+show `git status` / `git diff --stat`. Reading the whole diff and review rounds are not required
+unless the user asks. A fix round reuses the session so Codex keeps its context:
+
+```bash
+codex exec resume <session id> -c sandbox_mode="workspace-write" -c features.plugins=false \
+  -c 'sandbox_workspace_write.writable_roots=["<temp folder>/codex-tmp"]' \
+  -o "<temp folder>/codex-task-2.md" < "<temp folder>/findings.md"
+```
+
+`resume` has no `--add-dir`; the `writable_roots` key is the same scratch folder in config form —
+without it the fix round writes its temp files into the project again.
+
+`findings.md` is a list of what failed and what "fixed" means; the same Report form. Two rounds
+at most — a third means the spec is wrong, rewrite it.
 
 ## 4. Bare question — no project
 
@@ -117,7 +181,8 @@ cd "<temp folder>" && codex exec --sandbox read-only --skip-git-repo-check \
 ```
 
 Running from an empty temp folder = Codex sees neither the project `AGENTS.md` nor its code. Its own
-skills stay with it — there is nothing that isolates it completely.
+skills stay with it — there is nothing that isolates it completely. Codex records that folder as
+trusted in the user's `config.toml` (`REFERENCE.md`, pitfall 11): mention it, the config stays theirs.
 
 ## 5. Images — looking and generating
 
@@ -160,8 +225,8 @@ codex exec --sandbox workspace-write --skip-git-repo-check -c features.plugins=f
 
 | Request | Flag |
 |---|---|
-| a different model | `-m gpt-5.5` (options: `gpt-5.6-sol`, `gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`) |
-| "think harder" | `-c model_reasoning_effort="xhigh"` (scale: low, medium, high, xhigh, max, ultra) |
+| a different model | `-m gpt-5.6-sol` (options: `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`; the live list is in `REFERENCE.md`) |
+| "think harder" | `-c model_reasoning_effort="xhigh"` (scale: low, medium, high, xhigh, max, ultra — the top levels are not on every model, see `REFERENCE.md`) |
 | "make it faster" | `-c service_tier="priority"` (1.5× speed, higher spend) |
 
 ## 7. Follow-ups — resume the session
