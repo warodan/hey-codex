@@ -1,6 +1,6 @@
 ---
 name: hey-codex
-description: 'Use when the user wants to reach OpenAI Codex CLI (GPT-6 Astra, GPT-5.6) — ask it a question, hand it a task by spec so it writes the code in the project, get a second opinion from another model, read an image or a screenshot, generate a picture; also updating Codex CLI itself and diagnosing its errors. Triggers: "ask codex", "call codex", "give codex a task", "let codex write it", "send this to codex", "ask codex to write/review/look at/draw", "what does codex say", "ask codex to clarify", "have codex generate an image", "hey codex", "update codex", "which codex version", "codex crashed", "codex is not responding", "codex error", hey-codex, codex, codex exec. Russian: «вызови кодекс», «спроси кодекса», «дай кодексу задачу», «отправь в кодекс», «попроси кодекса написать/проверить/посмотреть/нарисовать», «что скажет кодекс», «уточни у кодекса», «пусть кодекс сгенерирует картинку», «эй кодекс», «обнови кодекс», «какая версия кодекса», «кодекс упал», «кодекс не отвечает», «ошибка codex».'
+description: 'Use when the user wants to reach OpenAI Codex CLI — ask it a question, hand it a task by spec so it writes the code in the project, get a second opinion from another model, read an image or a screenshot, generate a picture; also updating Codex CLI itself and diagnosing its errors. Triggers: "ask codex", "call codex", "give codex a task", "let codex write it", "send this to codex", "ask codex to write/review/look at/draw", "what does codex say", "ask codex to clarify", "have codex generate an image", "hey codex", "update codex", "which codex version", "codex crashed", "codex is not responding", "codex error", hey-codex, codex, codex exec. Russian: «вызови кодекс», «спроси кодекса», «дай кодексу задачу», «отправь в кодекс», «попроси кодекса написать/проверить/посмотреть/нарисовать», «что скажет кодекс», «уточни у кодекса», «пусть кодекс сгенерирует картинку», «эй кодекс», «обнови кодекс», «какая версия кодекса», «кодекс упал», «кодекс не отвечает», «ошибка codex».'
 ---
 
 # hey-codex — calling the OpenAI Codex CLI
@@ -110,10 +110,10 @@ codex exec --sandbox workspace-write -c features.plugins=false \
   -o "<temp folder>/codex-task-1.md" < "<temp folder>/spec.md"
 ```
 
-`--add-dir` gives Codex a writable scratch folder outside the project. Without it, on Windows the
-sandbox cannot reach the system TEMP, so Codex puts pytest temp dirs and caches inside the
-project (`.tmp/`, `.test-runs/`) — and is then refused deleting them. Name that folder in the
-spec's Constraints (see the template).
+`--add-dir` gives Codex a writable scratch folder outside the project; name it in the spec's
+Constraints (see the template). On older builds the Windows sandbox could not reach the system
+TEMP, and Codex put pytest temp dirs and caches inside the project (`.tmp/`, `.test-runs/`), then
+was refused deleting them. 0.156.1 reaches TEMP; the named folder keeps that guarantee on any build.
 
 Model and effort come from the config (§1). Heavy task — add `-c model_reasoning_effort="xhigh"`.
 `ultra` only when the user hands Codex the whole organisation of the work: on `ultra` Codex
@@ -168,7 +168,8 @@ codex exec resume <session id> -c sandbox_mode="workspace-write" -c features.plu
 ```
 
 `resume` has no `--add-dir`; the `writable_roots` key is the same scratch folder in config form —
-without it the fix round writes its temp files into the project again.
+without it the fix round writes its temp files into the project again. If the first round ran with
+`xhigh`, pass it again: `resume` takes effort from the config (§7).
 
 `findings.md` is a list of what failed and what "fixed" means; the same Report form. Two rounds
 at most — a third means the spec is wrong, rewrite it.
@@ -181,8 +182,7 @@ cd "<temp folder>" && codex exec --sandbox read-only --skip-git-repo-check \
 ```
 
 Running from an empty temp folder = Codex sees neither the project `AGENTS.md` nor its code. Its own
-skills stay with it — there is nothing that isolates it completely. Codex records that folder as
-trusted in the user's `config.toml` (`REFERENCE.md`, pitfall 11): mention it, the config stays theirs.
+skills stay with it — there is nothing that isolates it completely.
 
 ## 5. Images — looking and generating
 
@@ -225,9 +225,11 @@ codex exec --sandbox workspace-write --skip-git-repo-check -c features.plugins=f
 
 | Request | Flag |
 |---|---|
-| a different model | `-m gpt-5.6-sol` (options: `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`; the live list is in `REFERENCE.md`) |
+| a different model | `-m gpt-6-sol` (options: `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, the older `gpt-5.6-sol` / `-terra` / `-luna`; the live list is in `~/.codex/models_cache.json`) |
 | "think harder" | `-c model_reasoning_effort="xhigh"` (scale: low, medium, high, xhigh, max, ultra — the top levels are not on every model, see `REFERENCE.md`) |
-| "make it faster" | `-c service_tier="priority"` (1.5× speed, higher spend) |
+| "make it faster" | `-c service_tier="priority"` (1.5× speed, 2× on `gpt-6-astra`; higher spend) |
+
+These flags hold for one call only: a §7 follow-up reads the config again — repeat them in `resume`.
 
 ## 7. Follow-ups — resume the session
 
@@ -242,7 +244,10 @@ codex exec resume --last -c sandbox_mode="read-only" -c features.plugins=false \
 **Careful**: `resume` has no `--sandbox` and no `-C` — set the sandbox only through
 `-c sandbox_mode="read-only"` (otherwise `danger-full-access` from the config kicks in), and the
 working folder is inherited from that session. Its untrusted status is inherited too: a §4 session
-ran in a temp folder, so its `resume` needs `--skip-git-repo-check`.
+ran in a temp folder, so its `resume` needs `--skip-git-repo-check`. The model and effort are **not**
+inherited — `resume` reads them from the config again. If the first call carried `-m` or
+`model_reasoning_effort` (§3, §6), repeat them in the `resume` command, or the follow-up silently
+runs on a different model.
 
 `--last` takes the most recent session filtered by the current cwd — if several branches of the
 conversation ran in parallel, take the id from the output header (`session id: <uuid>`) and resume

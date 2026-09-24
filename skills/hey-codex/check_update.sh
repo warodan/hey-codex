@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
-# Daily update check for Codex CLI. Called at the start of the `codex` skill.
+# Daily update check for Codex CLI. Called at the start of the `hey-codex` skill.
 # Skips instantly if checked less than 24h ago; otherwise compares the installed
 # version with npm and runs `codex update` when behind.
 # Output is one ASCII line (Windows consoles mangle non-ASCII in piped stdout).
 
-STAMP="$HOME/.codex/.claude-skill-update-check"
+STAMP="${CODEX_HOME:-$HOME/.codex}/.claude-skill-update-check"
 TTL=86400
 
 if ! command -v codex >/dev/null 2>&1; then

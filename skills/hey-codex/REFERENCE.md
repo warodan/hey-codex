@@ -11,7 +11,7 @@ did not work or the user asks for something non-standard.
 - [Other subcommands](#other-subcommands) — `resume`, `review`, `apply`, `doctor`, `mcp`
 - [Pitfalls](#pitfalls) — **prompt as an argument on Windows**, hanging at start, encoding,
   unknown feature flag, untrusted directory, error 400, YAML, Store `python` in the sandbox,
-  trust trail in the config
+  old trust entries in the config
 - [Cost](#cost) — subscription spend
 
 ## Where things live
@@ -22,7 +22,7 @@ did not work or the user asks for something non-standard.
 | authentication | ChatGPT account (`codex login status` → `Logged in using ChatGPT`), not an API key |
 | config | `~/.codex/config.toml`, or `$CODEX_HOME/config.toml` if the variable is set |
 | sessions | `~/.codex/sessions/`, index `~/.codex/session_index.jsonl`, logs `~/.codex/log/` |
-| Codex skills | `~/.agents/skills/` (shared with Claude Code) |
+| Codex skills | `~/.agents/skills/` (shared with Claude Code when installed via skills.sh) |
 | model cache | `~/.codex/models_cache.json` (refreshed from the server, holds `client_version`) |
 
 ## Updating
@@ -47,7 +47,7 @@ model = "gpt-6-astra"                 # the default model
 model_reasoning_effort = "high"       # low → medium → high → xhigh → max → ultra
 sandbox_mode = "workspace-write"      # see the warning below
 approval_policy = "on-request"
-service_tier = "default"              # "priority" = 1.5x speed
+service_tier = "default"              # "priority" = Fast, 1.5x (2x on gpt-6-astra)
 
 [shell_environment_policy]
 inherit = "core"                      # "core" = HOME, PATH, TEMP and the like — the user's own
@@ -70,20 +70,22 @@ Do not edit the config silently: it is the user's shared file, also used by the 
 
 From `~/.codex/models_cache.json` (check there for the current list):
 
-- `gpt-6-astra` — the top model (bundled default since 0.153.4, 2026-09-04); follows `AGENTS.md`
-  and skills more literally than Sol, delegates less than asked, may stop early on a vague task —
-  define "done" in the spec
-- `gpt-5.6-sol` — the previous main agentic model, `gpt-5.6-terra` (balanced), `gpt-5.6-luna` (fast)
-- `gpt-5.5` — previous generation
-- `gpt-5.4` and `gpt-5.4-mini` left the catalogue with 0.154.0
+- `gpt-6-astra` — the top model and still the bundled default (since 0.153.4; checked on 0.156.1
+  with `--ignore-user-config`); follows `AGENTS.md` and skills more literally than Sol, delegates
+  less than asked, may stop early on a vague task — define "done" in the spec
+- `gpt-6-sol` — the workhorse for coding and everyday work, `gpt-6-luna` — fast and cheap, for
+  easier tasks (both added in 0.156.1)
+- `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` — previous generation
+- `gpt-5.5` — legacy, retires on 2026-10-14
 
 `model_reasoning_effort` levels: `low` → `medium` → `high` → `xhigh` → `max` → `ultra`
 (`ultra` = maximum plus automatic delegation of subtasks). Not every model has the top levels:
-`gpt-5.6-luna` stops at `max`, `gpt-5.5` at `xhigh`.
-The model's own default is `medium` (`low` on Sol); the user's config may say otherwise — that is
-their choice, do not change it unasked.
+`gpt-6-luna` and `gpt-5.6-luna` stop at `max`, `gpt-5.5` at `xhigh`.
+The model's own default is `medium` (`low` on `gpt-5.6-sol`); the user's config may say otherwise —
+that is their choice, do not change it unasked.
 
-Speed: `service_tier = "default"` (normal) or `"priority"` (called Fast in the UI, 1.5×).
+Speed: `service_tier = "default"` (normal) or `"priority"` (called Fast in the UI: 1.5×, 2× on
+`gpt-6-astra`).
 
 ## `codex exec` flags
 
@@ -111,7 +113,9 @@ is the main way to pass it, see pitfall 1.
 - `codex exec resume --last [PROMPT]` / `resume <SESSION_ID>` — resume a session (`--all` drops the cwd filter).
   `resume` has **no** `--sandbox`, no `-C` and no `--add-dir`: the sandbox is set with
   `-c sandbox_mode="read-only"`, the scratch folder with `-c 'sandbox_workspace_write.writable_roots=["<dir>"]'`,
-  and the working folder is inherited from the original session. It does have: `-m`, `-c`, `-o`, `--json`,
+  and the working folder is inherited from the original session. The model and effort are **not**
+  inherited: they come from the config again, so repeat `-m` / `-c model_reasoning_effort=…` if the
+  first call had them (checked on 0.156.1). It does have: `-m`, `-c`, `-o`, `--json`,
   `-i`, `--enable/--disable`, `--skip-git-repo-check`, `--ephemeral`, `--ignore-user-config`, `--output-schema`
 - `codex review` — non-interactive code review of a repository
 - `codex apply` — apply the agent's last diff to the working tree as `git apply`
@@ -159,7 +163,8 @@ is the main way to pass it, see pitfall 1.
    `resume` has this flag too, and needs it too if the original session ran in an untrusted folder.
 6. **`400 … model requires a newer version of Codex`** — the CLI is behind the server-side model
    catalogue (`client_version` in `models_cache.json` is higher than `codex --version`). Cured by
-   `codex update`; the temporary workaround is `-m gpt-5.5`.
+   `codex update`; the temporary workaround is an older model the installed CLI already knows, e.g.
+   `-m gpt-5.6-sol`.
 7. **The sandbox from the config may be unsafe** — pass `--sandbox` explicitly in every call, do not
    rely on what the user has set (see the "Config" section).
 8. **An unquoted `description:` can stop a skill from loading** — a colon-space inside the value
@@ -173,9 +178,10 @@ is the main way to pass it, see pitfall 1.
     the Microsoft Store alias in `WindowsApps`, and the sandbox refuses to launch it ("access
     denied"). Codex then works around it or reports a passing check that never ran. Cure: name a
     real interpreter in the spec (`py -3`, or the full path from `where python`).
-11. **Every `codex exec` in a new folder adds that folder to `[projects]` in `config.toml`** as
-    trusted — Codex does that itself, on every run. Probes in temp folders (§4) leave a trail;
-    tell the user which line appeared. The config is theirs, the skill does not edit it.
+11. **Old `[projects]` entries in `config.toml`.** Older builds added every folder a `codex exec` ran
+    in to `[projects]` as trusted, temp folders from §4 included. 0.156.1 no longer does (checked
+    for `read-only` and `workspace-write` in a fresh folder). Entries left by older builds stay —
+    the config is the user's, the skill does not edit it.
 
 ## Cost
 

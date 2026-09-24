@@ -47,7 +47,7 @@ the check itself and shows `git diff --stat`. A fix round reuses the same Codex 
 
 ## Why
 
-- **A second model within reach** — GPT-6 Astra looks at the same task with fresh eyes: copy, a plan, a contested decision, code.
+- **A second model within reach** — a GPT-6 model (Astra by default) looks at the same task with fresh eyes: copy, a plan, a contested decision, code.
 - **No context switching** — no second terminal, no copy-pasting, no retyping the task.
 - **Images both ways** — from reading an error screenshot to a finished illustration, without leaving the chat.
 - **The dangerous Codex default is defused** — a typical config allows writing anywhere without asking; the skill passes `--sandbox read-only` in every call and enables writing only when you asked for it.
@@ -305,21 +305,19 @@ hey-codex/                   # the repository
 - **It does not install Codex for you.** The first install, `codex login` and the contents of
   `config.toml` are done by hand. The skill only assembles commands.
 - **It updates the Codex CLI on its own.** Once a day it may run `codex update` (which is
-  `npm install -g`). If you need a pinned version — delete `check_update.sh` and §0 in `SKILL.md`.
+  `npm install -g`) and leaves a timestamp in `~/.codex/.claude-skill-update-check`. If you need a
+  pinned version — delete `check_update.sh` and §0 in `SKILL.md`; to go back to an older one,
+  `npm install -g @openai/codex@<version>`.
 - **It does not check whether Codex is right.** The answer is delivered verbatim, unverified. Edits made
   in `workspace-write` are verified only by the check named in the spec, which Claude reruns; there
   is no review round unless you ask for one.
 - **Image generation is imprecise in the details.** Fine print, strict geometry and requested dimensions
   do not always come out on the first try — the result is worth a look and possibly a redo.
-- **Codex marks folders as trusted on its own.** Every `codex exec` in a new folder — including the
-  temporary one used for a bare question — adds a `[projects]` entry to your `config.toml`. That is
-  Codex behaviour, not the skill's; the skill never edits the file, so the entries stay until you
-  remove them.
 - **The `read-only` protection covers the skill's calls only.** Dangerous values in your `config.toml`
   stay dangerous for everything else that launches Codex.
 - **It is not free.** The work runs on your ChatGPT subscription; heavy runs eat noticeably into the
   limit. The OpenAI API-key authentication route has not been tested.
-- **Model names age.** `gpt-6-astra`, `gpt-5.6-sol` and the rest are current as of publication; the live
+- **Model names age.** `gpt-6-astra`, `gpt-6-sol` and the rest are current as of Codex CLI 0.156.1 (September 2026); the live
   list lives in `~/.codex/models_cache.json` and changes on OpenAI's side.
 
 ## License
